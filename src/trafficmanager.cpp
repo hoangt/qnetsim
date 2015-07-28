@@ -1611,6 +1611,17 @@ bool TrafficManager::_SingleSim( )
 
 bool TrafficManager::Run( )
 {
+		
+/*		vector<pair<int, int>> packets_list;
+		int my_source;
+		int my_dest;
+		ifstream read("anynet_traffic");
+		while(read >> my_source >> my_dest){
+				packets_list.push_back(std::make_pair(my_source,my_dest));
+				cout << my_source << " " << my_dest << endl;
+		}
+*/	
+
     for ( int sim = 0; sim < _total_sims; ++sim ) {
 
         _time = 0;
