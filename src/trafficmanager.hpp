@@ -56,6 +56,8 @@ private:
   vector<int> _packet_size_max_val;
 
 protected:
+  vector< pair<int, int> > src_dest_list;
+  
   int _nodes;
   int _routers;
   int _vcs;
@@ -270,7 +272,7 @@ protected:
   bool _PacketsOutstanding( ) const;
   
   virtual int  _IssuePacket( int source, int cl );
-  void _GeneratePacket( int source, int size, int cl, int time );
+  void _GeneratePacket( int source, int packet_destination, int size, int cl, int time );
 
   virtual void _ClearStats( );
 

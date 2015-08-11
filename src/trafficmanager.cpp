@@ -58,7 +58,7 @@ TrafficManager * TrafficManager::New(Configuration const & config,
 TrafficManager::TrafficManager( const Configuration &config, const vector<Network *> & net )
     : Module( 0, "traffic_manager" ), _net(net), _empty_network(false), _deadlock_timer(0), _reset_time(0), _drain_time(-1), _cur_id(0), _cur_pid(0), _time(0)
 {
-
+ 
     _nodes = _net[0]->NumNodes( );
     _routers = _net[0]->NumRouters( );
 
@@ -782,16 +782,16 @@ int TrafficManager::_IssuePacket( int source, int cl )
     return result;
 }
 
-void TrafficManager::_GeneratePacket( int source, int stype, 
+void TrafficManager::_GeneratePacket( int source, int packet_destination, int stype, 
                                       int cl, int time )
 {
     assert(stype!=0);
 
     Flit::FlitType packet_type = Flit::ANY_TYPE;
-    int size = _GetNextPacketSize(cl); //input size 
+    int size = _GetNextPacketSize(cl); //input size -- ajavadia: custom number of flits per packet
     int pid = _cur_pid++;
     assert(_cur_pid);
-    int packet_destination = _traffic_pattern[cl]->dest(source);
+    //int packet_destination = _traffic_pattern[cl]->dest(source); //ajavadia: traffic from file
     
     bool record = false;
     bool watch = gWatchOut && (_packets_to_watch.count(pid) > 0);
@@ -922,6 +922,41 @@ void TrafficManager::_GeneratePacket( int source, int stype,
 
 void TrafficManager::_Inject(){
 
+    // **ajavadia
+    vector< pair<int,int> >::const_iterator iter;  
+    for (iter = src_dest_list.begin(); iter!=src_dest_list.end(); ++iter) {
+      for ( int c = 0; c < _classes; ++c ) {      
+        // generate packets for any (src,dest) pair in src_dest_list      
+        int packet_src = iter->first;
+        int packet_dest = iter->second;
+        //cout<<"MY SRC"<<packet_src<<" -- MY DEST"<<packet_dest<<"\n";
+        if ( _partial_packets[packet_src][c].empty() ) {
+            bool generated = false;
+            while( !generated && ( _qtime[packet_src][c] <= _time ) ) {
+                int stype = _IssuePacket( packet_src, c );
+
+                if ( stype != 0 ) { //generate a packet
+                    _GeneratePacket( packet_src, packet_dest, stype, c, 
+                                     _include_queuing==1 ? 
+                                     _qtime[packet_src][c] : _time );
+                    generated = true;
+                }
+                // only advance time if this is not a reply packet
+                if(!_use_read_write[c] || (stype >= 0)){
+                    ++_qtime[packet_src][c];
+                }
+            }
+
+            if ( ( _sim_state == draining ) && 
+                 ( _qtime[packet_src][c] > _drain_time ) ) {
+                _qdrained[packet_src][c] = true;
+            }
+        }
+      }
+    }
+    // **ajavadia
+
+    /*
     for ( int input = 0; input < _nodes; ++input ) {
         for ( int c = 0; c < _classes; ++c ) {
             // Potentially generate packets for any (input,class)
@@ -950,6 +985,7 @@ void TrafficManager::_Inject(){
             }
         }
     }
+     */
 }
 
 void TrafficManager::_Step( )
@@ -1417,28 +1453,28 @@ void TrafficManager::_DisplayRemaining( ostream & os ) const
 
 bool TrafficManager::_SingleSim( )
 {
+    
     int converged = 0;
   
-    //once warmed up, we require 3 converging runs to end the simulation 
+    //once warmed up, we require 1 converging runs to end the simulation 
     vector<double> prev_latency(_classes, 0.0);
     vector<double> prev_accepted(_classes, 0.0);
     bool clear_last = false;
     int total_phases = 0;
     while( ( total_phases < _max_samples ) && 
            ( ( _sim_state != running ) || 
-             ( converged < 3 ) ) ) {
+             ( converged < 1 ) ) ) {  //ajavadia: require just 1 converging run
     
+        cout<<"_sim_state = "<<_sim_state<<"\n";
+        
         if ( clear_last || (( ( _sim_state == warming_up ) && ( ( total_phases % 2 ) == 0 ) )) ) {
             clear_last = false;
             _ClearStats( );
         }
     
-    
         for ( int iter = 0; iter < _sample_period; ++iter )
             _Step( );
     
-        //cout << _sim_state << endl;
-
         UpdateStats();
         DisplayStats();
     
@@ -1543,10 +1579,11 @@ bool TrafficManager::_SingleSim( )
         }
         ++total_phases;
     }
-  
+ 
+    
     if ( _sim_state == running ) {
         ++converged;
-    
+    /*
         _sim_state  = draining;
         _drain_time = _time;
 
@@ -1601,7 +1638,7 @@ bool TrafficManager::_SingleSim( )
 	  
                 }
             }
-        }
+        }*/
     } else {
         cout << "Too many sample periods needed to converge" << endl;
     }
@@ -1612,15 +1649,14 @@ bool TrafficManager::_SingleSim( )
 bool TrafficManager::Run( )
 {
 		
-/*		vector<pair<int, int>> packets_list;
 		int my_source;
 		int my_dest;
 		ifstream read("anynet_traffic");
 		while(read >> my_source >> my_dest){
-				packets_list.push_back(std::make_pair(my_source,my_dest));
+				src_dest_list.push_back(std::make_pair(my_source,my_dest));
 				cout << my_source << " " << my_dest << endl;
 		}
-*/	
+	
 
     for ( int sim = 0; sim < _total_sims; ++sim ) {
 
@@ -1645,7 +1681,8 @@ bool TrafficManager::Run( )
         // reset stats, all packets after warmup_time marked
         // converge
         // draing, wait until all packets finish
-        _sim_state    = warming_up;
+        //_sim_state    = warming_up;
+        _sim_state = running; //ajavadia: start in the running state and skip warmup
   
         _ClearStats( );
 
